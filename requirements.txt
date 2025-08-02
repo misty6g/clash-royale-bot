@@ -27,4 +27,4 @@ requests>=2.32.0
 
 # Redis for enhanced card management and learning
 redis>=5.0.0
-redis-py-cluster>=2.1.0
+# redis-py-cluster>=2.1.0  # Temporarily disabled due to dependency conflict

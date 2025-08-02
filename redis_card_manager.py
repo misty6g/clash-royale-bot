@@ -99,10 +99,34 @@ class RedisCardManager:
                 self.redis_client.hgetall, f"{self.card_prefix}{card_name}"
             )
             if result:
-                return result
+                # Convert string values back to appropriate types
+                converted_result = {}
+                for k, v in result.items():
+                    if v.lower() in ['true', 'false']:
+                        converted_result[k] = v.lower() == 'true'
+                    elif v.isdigit():
+                        converted_result[k] = int(v)
+                    elif self._is_float(v):
+                        converted_result[k] = float(v)
+                    elif v.startswith('[') and v.endswith(']'):
+                        try:
+                            converted_result[k] = json.loads(v)
+                        except:
+                            converted_result[k] = v
+                    else:
+                        converted_result[k] = v
+                return converted_result
 
         # Fallback to JSON
         return self.json_cards.get(card_name, {})
+
+    def _is_float(self, value: str) -> bool:
+        """Check if string represents a float"""
+        try:
+            float(value)
+            return '.' in value
+        except ValueError:
+            return False
 
     def load_cards_from_json(self, json_path: str):
         """Load initial card data from cards.json into Redis"""
@@ -125,9 +149,20 @@ class RedisCardManager:
         try:
             card_key = f"{self.card_prefix}{card_name}"
 
-            # Store static properties as hash
-            static_props = {k: v for k, v in card_data.items()
-                           if k not in ['counters', 'countered_by', 'synergies']}
+            # Store static properties as hash, converting all values to strings
+            static_props = {}
+            for k, v in card_data.items():
+                if k not in ['counters', 'countered_by', 'synergies']:
+                    # Convert all values to strings for Redis compatibility
+                    if isinstance(v, bool):
+                        static_props[k] = str(v).lower()
+                    elif isinstance(v, (int, float)):
+                        static_props[k] = str(v)
+                    elif isinstance(v, list):
+                        static_props[k] = json.dumps(v)
+                    else:
+                        static_props[k] = str(v)
+
             self._redis_operation_with_fallback(
                 self.redis_client.hset, card_key, mapping=static_props
             )

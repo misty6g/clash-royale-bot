@@ -1,14 +1,27 @@
 import time
-from typing import Dict, List
-from collections import deque
+import json
+import os
+from collections import deque, defaultdict
+from typing import Dict, List, Optional, Tuple
+import numpy as np
+from datetime import datetime
 
 class PerformanceMonitor:
-    def __init__(self, max_samples: int = 1000):
+    """Enhanced monitor and track bot performance metrics"""
+
+    def __init__(self, redis_manager=None, max_samples: int = 1000):
+        self.redis_manager = redis_manager
         self.max_samples = max_samples
+
+        # Enhanced performance metrics
         self.decision_times = deque(maxlen=max_samples)
         self.redis_operation_times = deque(maxlen=max_samples)
+        self.action_success_rates = defaultdict(list)
+        self.elixir_efficiency = deque(maxlen=500)
+        self.win_loss_record = deque(maxlen=100)
         self.fallback_events = []
-        
+
+        # Legacy metrics for compatibility
         self.metrics = {
             'total_decisions': 0,
             'avg_decision_time': 0.0,
@@ -17,11 +30,32 @@ class PerformanceMonitor:
             'fallback_activations': 0,
             'performance_warnings': 0
         }
-        
+
+        # Enhanced real-time metrics
+        self.current_session = {
+            'start_time': time.time(),
+            'games_played': 0,
+            'total_decisions': 0,
+            'successful_counters': 0,
+            'failed_counters': 0,
+            'average_elixir_advantage': 0.0
+        }
+
+        # Historical data
+        self.historical_data = {
+            'daily_performance': {},
+            'card_usage_stats': defaultdict(dict),
+            'opponent_patterns': defaultdict(list),
+            'meta_adaptation': []
+        }
+
         # Performance thresholds
         self.decision_time_warning = 200  # ms
         self.decision_time_critical = 500  # ms
         self.redis_time_warning = 50  # ms
+
+        # Load existing data if available
+        self.load_historical_data()
         
     def track_decision_time(self, decision_time_ms: float):
         """Track decision making performance"""

@@ -13,7 +13,68 @@ class Actions:
         # ADD: Enhanced action tracking
         self.action_history = []
 
-        # Define screen regions based on OS
+        # ADD: Platform manager integration
+        try:
+            from platform_manager import PlatformManager
+            self.platform_manager = PlatformManager()
+            self.use_platform_manager = True
+            print(f"Platform manager initialized for {self.platform_manager.platform}")
+        except ImportError:
+            self.platform_manager = None
+            self.use_platform_manager = False
+            print("Platform manager not available, using legacy coordinates")
+
+        # Initialize coordinates
+        self._initialize_coordinates()
+
+    def _initialize_coordinates(self):
+        """Initialize screen coordinates with emulator detection"""
+        if self.use_platform_manager:
+            # Try to detect emulator and get dynamic coordinates
+            emulator_window = self.platform_manager.find_emulator_window()
+            if emulator_window:
+                self._setup_dynamic_coordinates(emulator_window)
+            else:
+                print("No emulator detected, using default coordinates")
+                self._setup_default_coordinates()
+        else:
+            self._setup_default_coordinates()
+
+    def _setup_dynamic_coordinates(self, emulator_window):
+        """Setup coordinates based on detected emulator window"""
+        x, y, width, height = emulator_window['region']
+
+        # Calculate game area as percentage of emulator window
+        # These percentages work for most Android emulators running Clash Royale
+        game_area_percent = {
+            'left': 0.05,    # 5% from left edge
+            'top': 0.15,     # 15% from top edge
+            'right': 0.95,   # 95% from left edge
+            'bottom': 0.85   # 85% from top edge
+        }
+
+        self.TOP_LEFT_X = int(x + width * game_area_percent['left'])
+        self.TOP_LEFT_Y = int(y + height * game_area_percent['top'])
+        self.BOTTOM_RIGHT_X = int(x + width * game_area_percent['right'])
+        self.BOTTOM_RIGHT_Y = int(y + height * game_area_percent['bottom'])
+
+        self.FIELD_AREA = (self.TOP_LEFT_X, self.TOP_LEFT_Y,
+                          self.BOTTOM_RIGHT_X - self.TOP_LEFT_X,
+                          self.BOTTOM_RIGHT_Y - self.TOP_LEFT_Y)
+
+        self.WIDTH = self.BOTTOM_RIGHT_X - self.TOP_LEFT_X
+        self.HEIGHT = self.BOTTOM_RIGHT_Y - self.TOP_LEFT_Y
+
+        # Card bar coordinates (bottom of screen)
+        self.CARD_BAR_X = int(x + width * 0.2)
+        self.CARD_BAR_Y = int(y + height * 0.85)
+        self.CARD_BAR_WIDTH = int(width * 0.6)
+        self.CARD_BAR_HEIGHT = int(height * 0.1)
+
+        print(f"Dynamic coordinates set: Game area {self.FIELD_AREA}, Card bar ({self.CARD_BAR_X}, {self.CARD_BAR_Y})")
+
+    def _setup_default_coordinates(self):
+        """Setup default coordinates based on OS"""
         if self.os_type == "Darwin":  # macOS
             self.TOP_LEFT_X = 1013
             self.TOP_LEFT_Y = 120
@@ -23,16 +84,23 @@ class Actions:
 
             self.WIDTH = self.BOTTOM_RIGHT_X - self.TOP_LEFT_X
             self.HEIGHT = self.BOTTOM_RIGHT_Y - self.TOP_LEFT_Y
+
+            # Default card bar for macOS
+            self.CARD_BAR_X = 1100
+            self.CARD_BAR_Y = 700
+            self.CARD_BAR_WIDTH = 300
+            self.CARD_BAR_HEIGHT = 80
+
         elif self.os_type == "Windows": # windows
             self.TOP_LEFT_X = 1376
             self.TOP_LEFT_Y = 120
             self.BOTTOM_RIGHT_X = 1838
             self.BOTTOM_RIGHT_Y = 769
             self.FIELD_AREA = (self.TOP_LEFT_X, self.TOP_LEFT_Y, self.BOTTOM_RIGHT_X, self.BOTTOM_RIGHT_Y)
-            
+
             self.WIDTH = self.BOTTOM_RIGHT_X - self.TOP_LEFT_X
             self.HEIGHT = self.BOTTOM_RIGHT_Y - self.TOP_LEFT_Y
-            
+
             # Add card bar coordinates for Windows
             self.CARD_BAR_X = 1450
             self.CARD_BAR_Y = 847
@@ -129,12 +197,23 @@ class Actions:
         if card_index in self.card_keys:
             key = self.card_keys[card_index]
             print(f"Pressing key: {key}")
+
+            # Focus emulator window if using platform manager
+            if self.use_platform_manager and self.platform_manager.emulator_window:
+                self.platform_manager.focus_emulator_window()
+                time.sleep(0.1)
+
             pyautogui.press(key)
             time.sleep(0.2)
             print(f"Moving mouse to: ({x}, {y})")
-            pyautogui.moveTo(x, y, duration=0.2)
-            print("Clicking")
-            pyautogui.click()
+
+            # Use enhanced click method
+            if self.use_platform_manager and self.platform_manager.emulator_window:
+                self.platform_manager.click_at_position(x, y, relative_to_window=True)
+            else:
+                pyautogui.moveTo(x, y, duration=0.2)
+                print("Clicking")
+                pyautogui.click()
 
             # ADD: Track action for learning
             self.action_history.append({
@@ -144,6 +223,13 @@ class Actions:
             })
         else:
             print(f"Invalid card index: {card_index}")
+
+    def enhanced_click(self, x, y, relative_to_window=True):
+        """Enhanced click method with platform manager support"""
+        if self.use_platform_manager and self.platform_manager.emulator_window:
+            self.platform_manager.click_at_position(x, y, relative_to_window)
+        else:
+            pyautogui.click(x, y)
 
     def click_battle_start(self):
         button_image = os.path.join(self.images_folder, "battlestartbutton.png")

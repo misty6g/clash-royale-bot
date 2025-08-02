@@ -84,13 +84,13 @@ class ClashRoyaleEnv:
     def setup_roboflow(self):
         return InferenceHTTPClient(
             api_url="http://localhost:9001",
-            api_key="########"
+            api_key="zt3zjKAX2eYuIBGrLDJu"
         )
 
     def setup_card_roboflow(self):
         return InferenceHTTPClient(
             api_url="http://localhost:9001",
-            api_key="########"
+            api_key="zt3zjKAX2eYuIBGrLDJu"
         )
 
     def reset(self):
@@ -194,7 +194,7 @@ class ClashRoyaleEnv:
         self.actions.capture_area(self.screenshot_path)
         elixir = self.actions.count_elixir()
         results = self.rf_model.run_workflow(
-            workspace_name="workspace-mck69",
+            workspace_name="clash-royale",
             workflow_id="detect-count-and-visualize",
             images={"image": self.screenshot_path}
         )
@@ -309,7 +309,7 @@ class ClashRoyaleEnv:
             cards = []
             for card_path in card_paths:
                 results = self.card_model.run_workflow(
-                    workspace_name="clash-royale-841nt",
+                    workspace_name="clash-royale",
                     workflow_id="custom-workflow",
                     images={"image": card_path}
                 )
@@ -329,6 +329,9 @@ class ClashRoyaleEnv:
                     print("No card detected.")
                     cards.append("Unknown")
             return cards
+        except Exception as e:
+            print(f"Error in detect_cards_in_hand: {e}")
+            return []
 
     def detect_enemy_cards(self) -> List[str]:
         """Detect enemy cards currently on the battlefield"""
@@ -336,7 +339,7 @@ class ClashRoyaleEnv:
             # Use existing Roboflow model to detect enemy units
             screenshot_path = self.screenshot_path
             results = self.rf_model.run_workflow(
-                workspace_name="workspace-mck69",
+                workspace_name="clash-royale",
                 workflow_id="detect-count-and-visualize",
                 images={"image": screenshot_path}
             )
@@ -417,20 +420,21 @@ class ClashRoyaleEnv:
 
     def card_to_action_index(self, card_name: str) -> int:
         """Convert card name to action index using existing action space"""
-        # Build on existing get_available_actions() method
-        if card_name in self.current_cards:
-            card_position = self.current_cards.index(card_name)
-            # Use existing action space structure from env.py
-            # Actions are already defined in get_available_actions()
-            base_action = card_position * (self.grid_width * self.grid_height)
-            # Add center placement as default (existing grid center logic)
-            center_x, center_y = self.grid_width // 2, self.grid_height // 2
-            placement_offset = center_y * self.grid_width + center_x
-            return base_action + placement_offset
-        return 0  # Default to first action in existing action space
+        try:
+            # Build on existing get_available_actions() method
+            if card_name in self.current_cards:
+                card_position = self.current_cards.index(card_name)
+                # Use existing action space structure from env.py
+                # Actions are already defined in get_available_actions()
+                base_action = card_position * (self.grid_width * self.grid_height)
+                # Add center placement as default (existing grid center logic)
+                center_x, center_y = self.grid_width // 2, self.grid_height // 2
+                placement_offset = center_y * self.grid_width + center_x
+                return base_action + placement_offset
+            return 0  # Default to first action in existing action space
         except Exception as e:
-            print(f"Error in detect_cards_in_hand: {e}")
-            return []
+            print(f"Error in card_to_action_index: {e}")
+            return 0
 
     def get_available_actions(self):
         """Generate all possible actions"""
