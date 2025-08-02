@@ -3,6 +3,7 @@ import time
 import os
 import pyautogui
 import threading
+from typing import List
 from Actions import Actions
 from inference_sdk import InferenceHTTPClient
 
@@ -37,6 +38,48 @@ class ClashRoyaleEnv:
         self.prev_enemy_princess_towers = None
 
         self.match_over_detected = False
+
+        # ADD: Enhanced mode initialization
+        self.enhanced_mode = False
+        try:
+            from config import BotConfig
+            self.config = BotConfig()
+            if self.config.ENABLE_REDIS:
+                from redis_card_manager import RedisCardManager
+                self.redis_manager = RedisCardManager(self.config)
+                if self.redis_manager.redis_available:
+                    self.redis_manager.load_cards_from_json('cards.json')
+                    self.enhanced_mode = True
+                    print("Enhanced mode enabled with Redis")
+                else:
+                    print("Redis unavailable, staying in legacy mode")
+        except Exception as e:
+            print(f"Enhanced features initialization failed: {e}")
+            print("Continuing in legacy mode")
+            self.enhanced_mode = False
+
+        # Initialize other components only if Redis is working
+        if self.enhanced_mode:
+            try:
+                if self.config.ENABLE_LEARNING:
+                    from card_learning_system import CardLearningSystem
+                    self.learning_system = CardLearningSystem(self.redis_manager)
+
+                if self.config.ENABLE_OPPONENT_TRACKING:
+                    from opponent_tracker import OpponentTracker
+                    self.opponent_tracker = OpponentTracker(self.redis_manager)
+
+                if self.config.ENABLE_COUNTER_STRATEGY:
+                    from counter_strategy import CounterStrategy
+                    self.counter_strategy = CounterStrategy(self.redis_manager,
+                                                          getattr(self, 'opponent_tracker', None))
+
+                from performance_monitor import PerformanceMonitor
+                self.performance_monitor = PerformanceMonitor()
+
+            except Exception as e:
+                print(f"Enhanced components initialization failed: {e}")
+                self.enhanced_mode = False
 
     def setup_roboflow(self):
         return InferenceHTTPClient(
@@ -286,6 +329,105 @@ class ClashRoyaleEnv:
                     print("No card detected.")
                     cards.append("Unknown")
             return cards
+
+    def detect_enemy_cards(self) -> List[str]:
+        """Detect enemy cards currently on the battlefield"""
+        try:
+            # Use existing Roboflow model to detect enemy units
+            screenshot_path = self.screenshot_path
+            results = self.rf_model.run_workflow(
+                workspace_name="workspace-mck69",
+                workflow_id="detect-count-and-visualize",
+                images={"image": screenshot_path}
+            )
+
+            enemy_cards = []
+            # Handle new structure: dict with "predictions" key
+            predictions = []
+            if isinstance(results, dict) and "predictions" in results:
+                predictions = results["predictions"]
+            elif isinstance(results, list) and results:
+                first = results[0]
+                if isinstance(first, dict) and "predictions" in first:
+                    predictions = first["predictions"]
+
+            for prediction in predictions:
+                # Filter for enemy units (you'll need to distinguish enemy vs friendly)
+                if prediction.get('confidence', 0) > 0.7:
+                    card_name = prediction.get('class_name', '')
+                    # Add logic to determine if it's an enemy card based on position
+                    x = prediction.get('x', 0)
+                    y = prediction.get('y', 0)
+                    if self._is_enemy_position(x, y):
+                        enemy_cards.append(card_name)
+
+            return enemy_cards
+        except Exception as e:
+            print(f"Error detecting enemy cards: {e}")
+            return []
+
+    def _is_enemy_position(self, x: float, y: float) -> bool:
+        """Determine if detected card is in enemy territory"""
+        # Enemy territory is typically upper half of the screen
+        # Adjust based on your game area coordinates
+        return y < self.grid_height / 2
+
+    def choose_optimal_action(self, state, my_hand: List[str] = None) -> int:
+        """Enhanced action selection with fallback to existing behavior"""
+        # CRITICAL: Always preserve existing DQN behavior as primary
+        base_action = 0  # Default action if no agent available
+
+        # Only use enhanced features if explicitly enabled and working
+        if not self.enhanced_mode or not hasattr(self, 'counter_strategy'):
+            return base_action
+
+        try:
+            # Get current hand if not provided
+            if my_hand is None:
+                my_hand = self.detect_cards_in_hand()
+                if not my_hand:
+                    return base_action
+
+            # Quick check for immediate threats (with timeout)
+            start_time = time.time()
+            enemy_cards = self.detect_enemy_cards()
+
+            if (time.time() - start_time) * 1000 > self.config.MAX_DECISION_TIME_MS / 2:
+                print("Enemy detection too slow, using base action")
+                return base_action
+
+            # Try counter strategy with remaining time budget
+            if enemy_cards and hasattr(self, 'counter_strategy'):
+                for enemy_card in enemy_cards:
+                    if (time.time() - start_time) * 1000 > self.config.MAX_DECISION_TIME_MS:
+                        break
+
+                    best_counter = self.counter_strategy.get_best_counter(enemy_card, my_hand)
+                    if best_counter:
+                        counter_action = self.card_to_action_index(best_counter)
+                        print(f"Counter strategy: {best_counter} vs {enemy_card}")
+                        return counter_action
+
+            # Always fall back to existing DQN decision
+            return base_action
+
+        except Exception as e:
+            print(f"Enhanced action selection failed: {e}, using base action")
+            return base_action
+
+    def card_to_action_index(self, card_name: str) -> int:
+        """Convert card name to action index using existing action space"""
+        # Build on existing get_available_actions() method
+        if card_name in self.current_cards:
+            card_position = self.current_cards.index(card_name)
+            # Use existing action space structure from env.py
+            # Actions are already defined in get_available_actions()
+            base_action = card_position * (self.grid_width * self.grid_height)
+            # Add center placement as default (existing grid center logic)
+            center_x, center_y = self.grid_width // 2, self.grid_height // 2
+            placement_offset = center_y * self.grid_width + center_x
+            return base_action + placement_offset
+        return 0  # Default to first action in existing action space
         except Exception as e:
             print(f"Error in detect_cards_in_hand: {e}")
             return []

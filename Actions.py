@@ -10,6 +10,9 @@ class Actions:
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
         self.images_folder = os.path.join(self.script_dir, 'main_images')
 
+        # ADD: Enhanced action tracking
+        self.action_history = []
+
         # Define screen regions based on OS
         if self.os_type == "Darwin":  # macOS
             self.TOP_LEFT_X = 1013
@@ -132,6 +135,13 @@ class Actions:
             pyautogui.moveTo(x, y, duration=0.2)
             print("Clicking")
             pyautogui.click()
+
+            # ADD: Track action for learning
+            self.action_history.append({
+                'card_index': card_index,
+                'position': (x, y),
+                'timestamp': time.time()
+            })
         else:
             print(f"Invalid card index: {card_index}")
 

@@ -38,6 +38,12 @@ def train():
     # Ensure models directory exists
     os.makedirs("models", exist_ok=True)
 
+    # ADD: Performance monitoring
+    performance_monitor = None
+    decision_times = []
+    if hasattr(env, 'enhanced_mode') and env.enhanced_mode:
+        performance_monitor = env.performance_monitor
+
     # Load latest model if available
     latest_model = get_latest_model_path("models")
     if latest_model:
@@ -64,13 +70,34 @@ def train():
         total_reward = 0
         done = False
         while not done:
+            # ADD: Timing wrapper around existing decision
+            start_time = time.time()
             action = agent.act(state)
+            decision_time = (time.time() - start_time) * 1000
+            decision_times.append(decision_time)
+
+            # Track performance if monitoring enabled
+            if performance_monitor:
+                performance_monitor.track_decision_time(decision_time)
+                if performance_monitor.should_disable_features():
+                    env.enhanced_mode = False
+                    print("Enhanced features disabled due to performance")
+
             next_state, reward, done = env.step(action)
             agent.remember(state, action, reward, next_state, done)
             agent.replay(batch_size)
             state = next_state
             total_reward += reward
         print(f"Episode {ep + 1}: Total Reward = {total_reward:.2f}, Epsilon = {agent.epsilon:.3f}")
+
+        # ADD: Performance monitoring
+        if ep % 10 == 0 and decision_times:
+            recent_times = decision_times[-100:] if len(decision_times) >= 100 else decision_times
+            avg_time = sum(recent_times) / len(recent_times)
+            print(f"Avg decision time: {avg_time:.1f}ms")
+
+            if performance_monitor:
+                performance_monitor.print_performance_summary()
 
         if ep % 10 == 0:
             agent.update_target_model()
