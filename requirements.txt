@@ -1,0 +1,26 @@
+# Clash Royale Bot Dependencies
+# Core ML/AI libraries
+torch>=2.7.0
+numpy>=2.0.0
+
+# Computer Vision and Image Processing
+opencv-python>=4.8.1.78
+pillow>=11.0.0
+
+# Roboflow Integration
+inference-sdk>=0.51.0
+
+# GUI Automation
+PyAutoGUI>=0.9.54
+
+# Keyboard Control
+pynput>=1.8.0
+
+# Data Processing
+scipy>=1.16.0
+matplotlib>=3.6.0
+
+# Utilities
+tqdm>=4.67.0
+pyyaml>=6.0.0
+requests>=2.32.0
