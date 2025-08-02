@@ -45,14 +45,32 @@ class EnhancedTrainingSystem:
         self.redis_manager = RedisCardManager(self.config)
         self.card_db = CardDatabaseManager()
         self.performance_monitor = PerformanceMonitor(self.redis_manager)
-        
+
+        # Initialize enhanced game manager if available
+        self.game_manager = None
+        self.enhanced_mode = False
+
+        try:
+            if hasattr(self.env, 'enhanced_vision') and self.env.enhanced_vision:
+                from enhanced_game_manager import EnhancedGameManager
+                self.game_manager = EnhancedGameManager(
+                    self.env.enhanced_vision,
+                    getattr(self.env, 'platform_manager', None)
+                )
+                self.enhanced_mode = True
+                print("✅ Enhanced game manager initialized")
+            else:
+                print("⚠️  Enhanced vision not available, using legacy mode")
+        except Exception as e:
+            print(f"⚠️  Enhanced game manager initialization failed: {e}")
+
         # Initialize strategy components if enabled
         self.opponent_tracker = None
         self.counter_strategy = None
-        
+
         if self.config.ENABLE_OPPONENT_TRACKING:
             self.opponent_tracker = OpponentTracker(self.redis_manager)
-        
+
         if self.config.ENABLE_COUNTER_STRATEGY:
             self.counter_strategy = CounterStrategy(self.redis_manager, self.opponent_tracker)
         
@@ -116,49 +134,89 @@ class EnhancedTrainingSystem:
     
     def _run_episode(self, episode: int) -> float:
         """Run a single enhanced episode"""
+        # Start new match tracking if enhanced mode is available
+        if self.game_manager:
+            match_id = self.game_manager.start_new_match()
+            print(f"🎮 Episode {episode}: Started tracking match {match_id}")
+
         state = self.env.reset()
         total_reward = 0
         done = False
         step_count = 0
-        
+
         # Episode-specific tracking
         episode_actions = []
         episode_strategies = []
-        
+
         while not done and step_count < 1000:  # Max steps per episode
             step_start_time = time.time()
-            
+
+            # Update game state if enhanced mode is available
+            if self.game_manager:
+                game_state = self.game_manager.update_game_state()
+                if game_state and game_state.phase.value == "match_end":
+                    print("🏁 Match end detected, finishing episode")
+                    done = True
+                    break
+
             # Get enhanced action with strategy
             action = self._get_enhanced_action(state, episode_actions)
-            
+
+            # Validate action if enhanced mode is available
+            if self.game_manager:
+                card_name = self._get_card_name_for_action(action)
+                position = self._get_position_for_action(action)
+
+                if not self.game_manager.validate_action(action, card_name, position):
+                    print(f"⚠️  Action {action} validation failed, using no-op")
+                    action = len(self.env.actions) - 1  # No-op action
+
             # Execute action
             next_state, reward, done = self.env.step(action)
-            
+
             # Enhanced reward shaping
             shaped_reward = self._shape_reward(reward, state, action, next_state)
-            
+
             # Store experience
             self.agent.remember(state, action, shaped_reward, next_state, done)
-            
+
             # Track performance
             decision_time = (time.time() - step_start_time) * 1000
             self.performance_monitor.track_decision_time(decision_time)
-            
+
             # Update state and tracking
             state = next_state
             total_reward += shaped_reward
             step_count += 1
-            
+
             episode_actions.append(action)
-            
+
             # Train agent periodically
             if len(self.agent.memory) > 32:
                 self.agent.replay(batch_size=32)
-        
+
         # Post-episode learning
         self._post_episode_learning(episode_actions, total_reward)
-        
+
+        # Get enhanced metrics if available
+        if self.game_manager:
+            match_stats = self.game_manager.get_match_statistics()
+            if match_stats.get('current_match'):
+                print(f"📊 Match stats: {match_stats['current_match']['result'].value if 'result' in match_stats['current_match'] else 'ongoing'}")
+
         return total_reward
+
+    def _get_card_name_for_action(self, action: int) -> str:
+        """Get card name for action index"""
+        # This would map action index to card name based on current hand
+        # For now, return a default
+        return "Unknown"
+
+    def _get_position_for_action(self, action: int) -> Tuple[int, int]:
+        """Get position for action index"""
+        # This would map action index to screen position
+        # For now, return a default valid position in ally side
+        return (500, 600)
     
     def _get_enhanced_action(self, state, episode_actions) -> int:
         """Get action using enhanced strategy system"""

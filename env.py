@@ -7,6 +7,14 @@ from typing import List
 from Actions import Actions
 from inference_sdk import InferenceHTTPClient
 
+# Import enhanced vision system
+try:
+    from enhanced_vision_system import EnhancedVisionSystem, GameState, GamePhase
+    ENHANCED_VISION_AVAILABLE = True
+except ImportError:
+    print("Enhanced vision system not available, using legacy detection")
+    ENHANCED_VISION_AVAILABLE = False
+
 MAX_ENEMIES = 10
 MAX_ALLIES = 10
 
@@ -41,9 +49,25 @@ class ClashRoyaleEnv:
 
         # ADD: Enhanced mode initialization
         self.enhanced_mode = False
+        self.enhanced_vision = None
+
         try:
             from config import BotConfig
             self.config = BotConfig()
+
+            # Initialize enhanced vision system
+            if ENHANCED_VISION_AVAILABLE:
+                try:
+                    from platform_manager import PlatformManager
+                    self.platform_manager = PlatformManager()
+                    self.platform_manager.find_emulator_window()
+
+                    self.enhanced_vision = EnhancedVisionSystem(self.platform_manager)
+                    print("Enhanced vision system initialized")
+                except Exception as e:
+                    print(f"Enhanced vision initialization failed: {e}")
+                    self.enhanced_vision = None
+
             if self.config.ENABLE_REDIS:
                 from redis_card_manager import RedisCardManager
                 self.redis_manager = RedisCardManager(self.config)
@@ -191,91 +215,157 @@ class ClashRoyaleEnv:
         return next_state, reward, done
 
     def _get_state(self):
-        self.actions.capture_area(self.screenshot_path)
-        elixir = self.actions.count_elixir()
-        results = self.rf_model.run_workflow(
-            workspace_name="clash-royale",
-            workflow_id="detect-count-and-visualize",
-            images={"image": self.screenshot_path}
-        )
+        """Enhanced state detection using new vision system"""
+        try:
+            # Use enhanced vision system if available
+            if self.enhanced_vision:
+                game_state = self.enhanced_vision.get_complete_game_state()
+                return self._convert_game_state_to_vector(game_state)
 
-        print("RAW results:", results)
+            # Fallback to legacy state detection
+            return self._legacy_get_state()
 
-        # Handle new structure: dict with "predictions" key
-        predictions = []
-        if isinstance(results, dict) and "predictions" in results:
-            predictions = results["predictions"]
-        elif isinstance(results, list) and results:
-            first = results[0]
-            if isinstance(first, dict) and "predictions" in first:
-                predictions = first["predictions"]
-        print("Predictions:", predictions)
-        if not predictions:
-            print("WARNING: No predictions found in results")
-            return None
+        except Exception as e:
+            print(f"Error getting state: {e}")
+            return self._legacy_get_state()
 
-        # After getting 'predictions' from results:
-        if isinstance(predictions, dict) and "predictions" in predictions:
-            predictions = predictions["predictions"]
+    def _convert_game_state_to_vector(self, game_state) -> np.ndarray:
+        """Convert enhanced game state to vector format"""
+        try:
+            # Start with elixir (normalized)
+            elixir = game_state.my_elixir / 10.0
 
-        print("RAW predictions:", predictions)
-        print("Detected classes:", [repr(p.get("class", "")) for p in predictions if isinstance(p, dict)])
+            # Extract unit positions from enhanced game state
+            allies = []
+            enemies = []
 
-        TOWER_CLASSES = {
-            "ally king tower",
-            "ally princess tower",
-            "enemy king tower",
-            "enemy princess tower"
-        }
+            for unit in game_state.units_on_field:
+                if unit.get('team') == 'ally':
+                    pos = unit.get('position', (0, 0))
+                    allies.append(pos)
+                else:
+                    pos = unit.get('position', (0, 0))
+                    enemies.append(pos)
 
-        def normalize_class(cls):
-            return cls.strip().lower() if isinstance(cls, str) else ""
+            # Normalize and pad positions (same format as legacy)
+            def normalize(units):
+                return [(x / self.actions.WIDTH, y / self.actions.HEIGHT) for x, y in units]
 
-        allies = [
-            (p["x"], p["y"])
-            for p in predictions
-            if (
-                isinstance(p, dict)
-                and normalize_class(p.get("class", "")) not in TOWER_CLASSES
-                and normalize_class(p.get("class", "")).startswith("ally")
-                and "x" in p and "y" in p
+            def pad_units(units, max_units):
+                units = normalize(units)
+                if len(units) < max_units:
+                    units += [(0.0, 0.0)] * (max_units - len(units))
+                return units[:max_units]
+
+            ally_positions = pad_units(allies, MAX_ALLIES)
+            enemy_positions = pad_units(enemies, MAX_ENEMIES)
+
+            # Flatten positions
+            ally_flat = [coord for pos in ally_positions for coord in pos]
+            enemy_flat = [coord for pos in enemy_positions for coord in pos]
+
+            state = np.array([elixir] + ally_flat + enemy_flat, dtype=np.float32)
+            return state
+
+        except Exception as e:
+            print(f"Error converting game state to vector: {e}")
+            return self._legacy_get_state()
+
+    def _legacy_get_state(self):
+        """Legacy state detection method"""
+        try:
+            self.actions.capture_area(self.screenshot_path)
+            elixir = self.actions.count_elixir()
+            results = self.rf_model.run_workflow(
+                workspace_name="clash-royale",
+                workflow_id="detect-count-and-visualize",
+                images={"image": self.screenshot_path}
             )
-        ]
 
-        enemies = [
-            (p["x"], p["y"])
-            for p in predictions
-            if (
-                isinstance(p, dict)
-                and normalize_class(p.get("class", "")) not in TOWER_CLASSES
-                and normalize_class(p.get("class", "")).startswith("enemy")
-                and "x" in p and "y" in p
-            )
-        ]
+            print("RAW results:", results)
 
-        print("Allies:", allies)
-        print("Enemies:", enemies)
+            # Handle new structure: dict with "predictions" key
+            predictions = []
+            if isinstance(results, dict) and "predictions" in results:
+                predictions = results["predictions"]
+            elif isinstance(results, list) and results:
+                first = results[0]
+                if isinstance(first, dict) and "predictions" in first:
+                    predictions = first["predictions"]
+            print("Predictions:", predictions)
+            if not predictions:
+                print("WARNING: No predictions found in results")
+                return None
 
-        # Normalize positions
-        def normalize(units):
-            return [(x / self.actions.WIDTH, y / self.actions.HEIGHT) for x, y in units]
+            # After getting 'predictions' from results:
+            if isinstance(predictions, dict) and "predictions" in predictions:
+                predictions = predictions["predictions"]
 
-        # Pad or truncate to fixed length
-        def pad_units(units, max_units):
-            units = normalize(units)
-            if len(units) < max_units:
-                units += [(0.0, 0.0)] * (max_units - len(units))
-            return units[:max_units]
+            print("RAW predictions:", predictions)
+            print("Detected classes:", [repr(p.get("class", "")) for p in predictions if isinstance(p, dict)])
 
-        ally_positions = pad_units(allies, MAX_ALLIES)
-        enemy_positions = pad_units(enemies, MAX_ENEMIES)
+            TOWER_CLASSES = {
+                "ally king tower",
+                "ally princess tower",
+                "enemy king tower",
+                "enemy princess tower"
+            }
 
-        # Flatten positions
-        ally_flat = [coord for pos in ally_positions for coord in pos]
-        enemy_flat = [coord for pos in enemy_positions for coord in pos]
+            def normalize_class(cls):
+                return cls.strip().lower() if isinstance(cls, str) else ""
 
-        state = np.array([elixir / 10.0] + ally_flat + enemy_flat, dtype=np.float32)
-        return state
+            allies = [
+                (p["x"], p["y"])
+                for p in predictions
+                if (
+                    isinstance(p, dict)
+                    and normalize_class(p.get("class", "")) not in TOWER_CLASSES
+                    and normalize_class(p.get("class", "")).startswith("ally")
+                    and "x" in p and "y" in p
+                )
+            ]
+
+            enemies = [
+                (p["x"], p["y"])
+                for p in predictions
+                if (
+                    isinstance(p, dict)
+                    and normalize_class(p.get("class", "")) not in TOWER_CLASSES
+                    and normalize_class(p.get("class", "")).startswith("enemy")
+                    and "x" in p and "y" in p
+                )
+            ]
+
+            print("Allies:", allies)
+            print("Enemies:", enemies)
+
+            # Normalize positions
+            def normalize(units):
+                return [(x / self.actions.WIDTH, y / self.actions.HEIGHT) for x, y in units]
+
+            # Pad or truncate to fixed length
+            def pad_units(units, max_units):
+                units = normalize(units)
+                if len(units) < max_units:
+                    units += [(0.0, 0.0)] * (max_units - len(units))
+                return units[:max_units]
+
+            ally_positions = pad_units(allies, MAX_ALLIES)
+            enemy_positions = pad_units(enemies, MAX_ENEMIES)
+
+            # Flatten positions
+            ally_flat = [coord for pos in ally_positions for coord in pos]
+            enemy_flat = [coord for pos in enemy_positions for coord in pos]
+
+            state = np.array([elixir / 10.0] + ally_flat + enemy_flat, dtype=np.float32)
+            return state
+
+        except Exception as e:
+            print(f"Error in legacy state detection: {e}")
+            # Return default state
+            default_state = [5.0]  # Default elixir
+            default_state.extend([0, 0] * (MAX_ALLIES + MAX_ENEMIES))
+            return np.array(default_state, dtype=np.float32)
 
     def _compute_reward(self, state):
         if state is None:
@@ -302,6 +392,23 @@ class ClashRoyaleEnv:
         return reward
 
     def detect_cards_in_hand(self):
+        """Enhanced card detection using new vision system"""
+        try:
+            # Use enhanced vision system if available
+            if self.enhanced_vision:
+                cards = self.enhanced_vision.detect_cards_in_hand()
+                print(f"Enhanced vision detected cards: {cards}")
+                return cards
+
+            # Fallback to legacy detection
+            return self._legacy_detect_cards_in_hand()
+
+        except Exception as e:
+            print(f"Error in detect_cards_in_hand: {e}")
+            return ["Unknown"] * 4
+
+    def _legacy_detect_cards_in_hand(self):
+        """Legacy card detection method"""
         try:
             card_paths = self.actions.capture_individual_cards()
             print("\nTesting individual card predictions:")
@@ -330,8 +437,8 @@ class ClashRoyaleEnv:
                     cards.append("Unknown")
             return cards
         except Exception as e:
-            print(f"Error in detect_cards_in_hand: {e}")
-            return []
+            print(f"Error in legacy card detection: {e}")
+            return ["Unknown"] * 4
 
     def detect_enemy_cards(self) -> List[str]:
         """Detect enemy cards currently on the battlefield"""

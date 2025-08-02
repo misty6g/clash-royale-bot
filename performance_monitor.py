@@ -56,7 +56,24 @@ class PerformanceMonitor:
 
         # Load existing data if available
         self.load_historical_data()
-        
+
+    def load_historical_data(self):
+        """Load historical performance data if available"""
+        try:
+            if self.redis_manager and self.redis_manager.redis_available:
+                # Try to load from Redis
+                historical_data = self.redis_manager.get_performance_data()
+                if historical_data:
+                    self.historical_data = historical_data
+                    print("Historical performance data loaded from Redis")
+                else:
+                    print("No historical performance data found in Redis")
+            else:
+                print("Redis not available, starting with fresh performance data")
+        except Exception as e:
+            print(f"Error loading historical data: {e}")
+            print("Starting with fresh performance data")
+
     def track_decision_time(self, decision_time_ms: float):
         """Track decision making performance"""
         self.decision_times.append(decision_time_ms)
