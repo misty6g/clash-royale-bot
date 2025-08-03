@@ -76,20 +76,22 @@ class Actions:
     def _setup_default_coordinates(self):
         """Setup default coordinates based on OS"""
         if self.os_type == "Darwin":  # macOS
-            self.TOP_LEFT_X = 1013
-            self.TOP_LEFT_Y = 120
-            self.BOTTOM_RIGHT_X = 1480
-            self.BOTTOM_RIGHT_Y = 683
+            # Updated coordinates for BlueStacks Air on macOS
+            # BlueStacks window: position (1218, 72), size 538x932
+            self.TOP_LEFT_X = 1218
+            self.TOP_LEFT_Y = 72
+            self.BOTTOM_RIGHT_X = 1756  # 1218 + 538
+            self.BOTTOM_RIGHT_Y = 1004  # 72 + 932
             self.FIELD_AREA = (self.TOP_LEFT_X, self.TOP_LEFT_Y, self.BOTTOM_RIGHT_X, self.BOTTOM_RIGHT_Y)
 
             self.WIDTH = self.BOTTOM_RIGHT_X - self.TOP_LEFT_X
             self.HEIGHT = self.BOTTOM_RIGHT_Y - self.TOP_LEFT_Y
 
-            # Default card bar for macOS
-            self.CARD_BAR_X = 1100
-            self.CARD_BAR_Y = 700
-            self.CARD_BAR_WIDTH = 300
-            self.CARD_BAR_HEIGHT = 80
+            # Card bar coordinates for BlueStacks Air (bottom of game area)
+            self.CARD_BAR_X = 1250  # Slightly right of left edge
+            self.CARD_BAR_Y = 900   # Near bottom of BlueStacks window
+            self.CARD_BAR_WIDTH = 450  # Most of the width
+            self.CARD_BAR_HEIGHT = 80  # Standard height
 
         elif self.os_type == "Windows": # windows
             self.TOP_LEFT_X = 1376

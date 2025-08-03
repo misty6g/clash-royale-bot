@@ -60,10 +60,11 @@ class EnhancedVisionSystem:
         self.setup_roboflow_clients()
         
         # Game area coordinates (will be updated by platform manager)
-        self.game_area = (0, 0, 1920, 1080)  # Default full screen
-        self.card_area = (0, 900, 1920, 1080)  # Bottom area for cards
-        self.elixir_area = (1800, 850, 1900, 950)  # Elixir counter area
-        self.timer_area = (900, 50, 1020, 100)  # Timer area
+        # Updated for BlueStacks Air: position (1218, 72), size 538x932
+        self.game_area = (1218, 72, 1756, 1004)  # BlueStacks window
+        self.card_area = (1250, 900, 1700, 980)  # Bottom area for cards
+        self.elixir_area = (1650, 850, 1750, 950)  # Elixir counter area (right side)
+        self.timer_area = (1400, 100, 1520, 150)  # Timer area (center top)
         
         # Detection thresholds
         self.confidence_threshold = 0.5
@@ -87,19 +88,20 @@ class EnhancedVisionSystem:
         """Setup Roboflow inference clients"""
         try:
             from inference_sdk import InferenceHTTPClient
-            
+
             self.field_model = InferenceHTTPClient(
                 api_url="http://localhost:9001",
                 api_key="zt3zjKAX2eYuIBGrLDJu"
             )
-            
+
             self.card_model = InferenceHTTPClient(
-                api_url="http://localhost:9001", 
+                api_url="http://localhost:9001",
                 api_key="zt3zjKAX2eYuIBGrLDJu"
             )
-            
-            print("Roboflow clients initialized successfully")
-            
+
+            print("🎯 Roboflow clients initialized successfully")
+            print("✅ Full computer vision capabilities enabled")
+
         except Exception as e:
             print(f"Warning: Roboflow setup failed: {e}")
             self.field_model = None
@@ -228,19 +230,19 @@ class EnhancedVisionSystem:
         """Detect a single card using Roboflow"""
         if self.card_model is None:
             return "Unknown"
-        
+
         try:
             # Save card image temporarily
             temp_path = os.path.join("screenshots", "temp_card.png")
             cv2.imwrite(temp_path, card_image)
-            
+
             # Run Roboflow inference
             results = self.card_model.run_workflow(
-                workspace_name="clash-royale",
+                workspace_name="clash-royale-tgua7",
                 workflow_id="custom-workflow",
                 images={"image": temp_path}
             )
-            
+
             # Parse results
             if isinstance(results, list) and results:
                 predictions_dict = results[0].get("predictions", {})
@@ -250,9 +252,12 @@ class EnhancedVisionSystem:
                         best_prediction = max(predictions, key=lambda x: x.get("confidence", 0))
                         if best_prediction.get("confidence", 0) > self.card_confidence_threshold:
                             return best_prediction.get("class", "Unknown")
-            
+
             return "Unknown"
-            
+
+        except ConnectionError as e:
+            print(f"Roboflow server not available: {e}")
+            return "Unknown"
         except Exception as e:
             print(f"Error in single card detection: {e}")
             return "Unknown"
@@ -344,8 +349,8 @@ class EnhancedVisionSystem:
             
             # Run field detection
             results = self.field_model.run_workflow(
-                workspace_name="clash-royale",
-                workflow_id="field-detection",
+                workspace_name="clash-royale-tgua7",
+                workflow_id="detect-count-and-visualize",
                 images={"image": debug_path}
             )
             

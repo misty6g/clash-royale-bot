@@ -26,10 +26,10 @@ class PlatformManager:
                     'game_area': (0, 0, 1600, 900)
                 },
                 'macos': {
-                    'process_names': ['BlueStacks'],
-                    'window_titles': ['BlueStacks'],
-                    'default_size': (1600, 900),
-                    'game_area': (0, 0, 1600, 900)
+                    'process_names': ['BlueStacks', '/Applications/BlueStacks.app/Contents/MacOS/BlueStacks'],
+                    'window_titles': ['BlueStacks', 'BlueStacks Air'],
+                    'default_size': (538, 932),
+                    'game_area': (1218, 72, 1756, 1004)
                 }
             },
             'android_studio': {
