@@ -734,70 +734,27 @@ class ClashRoyaleEnv:
             print(f"Error finding counter card: {e}")
             return None
 
-    def _local_card_detection(self):
-        """Local card detection using image analysis (no Roboflow needed)"""
-        try:
-            # Capture individual card images
-            card_paths = self.actions.capture_individual_cards()
-            print("🔍 Local card detection: Captured card images")
 
-            detected_cards = []
-
-            # Load a list of common Clash Royale cards for pattern matching
-            common_cards = [
-                "Knight", "Archers", "Goblins", "Giant", "Wizard", "Dragon",
-                "Skeleton Army", "Fireball", "Mini P.E.K.K.A", "Musketeer",
-                "Bomber", "Arrows", "Lightning", "Hog Rider", "Minion Horde",
-                "Ice Wizard", "Princess", "Lava Hound", "Miner", "Sparky",
-                "Bowler", "Lumberjack", "Inferno Dragon", "Ice Golem", "Mega Minion",
-                "Graveyard", "Electro Wizard", "Elite Barbarians", "Tornado", "Clone"
-            ]
-
-            for i, card_path in enumerate(card_paths):
-                try:
-                    # For now, assign cards based on position and some basic logic
-                    # This is a simplified approach - in a full implementation,
-                    # you'd use computer vision to analyze the actual card images
-
-                    # Simple heuristic: assign different cards based on position
-                    card_index = i % len(common_cards)
-                    detected_card = common_cards[card_index]
-
-                    detected_cards.append(detected_card)
-                    print(f"🎴 Local detection - Card {i}: {detected_card}")
-
-                except Exception as e:
-                    print(f"Error analyzing card {i}: {e}")
-                    detected_cards.append("Unknown")
-
-            # Ensure we always return 4 cards
-            while len(detected_cards) < 4:
-                detected_cards.append("Unknown")
-
-            return detected_cards[:4]
-
-        except Exception as e:
-            print(f"Error in local card detection: {e}")
-            return ["Unknown"] * 4
 
     def detect_cards_in_hand(self):
-        """Enhanced card detection using new vision system"""
+        """Enhanced card detection using Roboflow"""
         try:
-            # Try local card detection first (doesn't need Roboflow)
-            cards = self._local_card_detection()
+            # Use legacy Roboflow detection as primary method
+            cards = self._legacy_detect_cards_in_hand()
             if cards and not all(card == "Unknown" for card in cards):
-                print(f"Local detection found cards: {cards}")
+                print(f"Roboflow detected cards: {cards}")
                 return cards
 
-            # Use enhanced vision system if available
+            # Use enhanced vision system if available as backup
             if self.enhanced_vision:
                 cards = self.enhanced_vision.detect_cards_in_hand()
                 print(f"Enhanced vision detected cards: {cards}")
                 if cards and not all(card == "Unknown" for card in cards):
                     return cards
 
-            # Fallback to legacy detection
-            return self._legacy_detect_cards_in_hand()
+            # Final fallback to unknown cards
+            print("⚠️ No cards detected, using Unknown placeholders")
+            return ["Unknown"] * 4
 
         except Exception as e:
             print(f"Error in detect_cards_in_hand: {e}")
@@ -848,28 +805,75 @@ class ClashRoyaleEnv:
             )
 
             enemy_cards = []
-            # Handle new structure: dict with "predictions" key
-            predictions = []
-            if isinstance(results, dict) and "predictions" in results:
-                predictions = results["predictions"]
-            elif isinstance(results, list) and results:
-                first = results[0]
-                if isinstance(first, dict) and "predictions" in first:
-                    predictions = first["predictions"]
+            print(f"🔍 Enemy detection raw results type: {type(results)}")
 
-            for prediction in predictions:
-                # Filter for enemy units (you'll need to distinguish enemy vs friendly)
-                if prediction.get('confidence', 0) > 0.7:
-                    card_name = prediction.get('class_name', '')
-                    # Add logic to determine if it's an enemy card based on position
-                    x = prediction.get('x', 0)
-                    y = prediction.get('y', 0)
-                    if self._is_enemy_position(x, y):
+            # Handle different result structures
+            predictions = []
+            if isinstance(results, dict):
+                if "predictions" in results:
+                    predictions = results["predictions"]
+                elif "output" in results:
+                    # Handle workflow output structure
+                    output = results["output"]
+                    if isinstance(output, dict) and "predictions" in output:
+                        predictions = output["predictions"]
+            elif isinstance(results, list) and results:
+                # Handle list structure
+                first = results[0]
+                if isinstance(first, dict):
+                    if "predictions" in first:
+                        predictions = first["predictions"]
+                    elif "output" in first:
+                        output = first["output"]
+                        if isinstance(output, dict) and "predictions" in output:
+                            predictions = output["predictions"]
+
+            print(f"🔍 Found {len(predictions)} predictions")
+
+            for i, prediction in enumerate(predictions):
+                try:
+                    print(f"🔍 Processing prediction {i}: {type(prediction)} - {prediction}")
+
+                    # Skip metadata strings like "image", "predictions", etc.
+                    if isinstance(prediction, str):
+                        # Only accept strings that look like actual card names
+                        if prediction.lower() in ['image', 'predictions', 'output', 'results']:
+                            print(f"🚫 Skipping metadata string: {prediction}")
+                            continue
+
+                        # Accept actual card names
+                        card_name = prediction
                         enemy_cards.append(card_name)
+                        print(f"🎯 Detected unit (string): {card_name}")
+                        continue
+
+                    # Handle dict predictions with confidence and coordinates
+                    if isinstance(prediction, dict):
+                        confidence = prediction.get('confidence', 0)
+                        if confidence > 0.5:  # Lower threshold for testing
+                            # Try different field names for class
+                            card_name = (prediction.get('class_name') or
+                                       prediction.get('class') or
+                                       prediction.get('label', ''))
+
+                            if card_name and card_name.lower() not in ['image', 'predictions', 'output', 'results']:
+                                # Get position coordinates
+                                x = prediction.get('x', 0)
+                                y = prediction.get('y', 0)
+
+                                # For now, add all detected units (we'll refine position logic later)
+                                enemy_cards.append(card_name)
+                                print(f"🎯 Detected unit (dict): {card_name} at ({x}, {y}) confidence: {confidence:.2f}")
+
+                except Exception as pred_error:
+                    print(f"Error processing prediction {i}: {pred_error}")
+                    continue
 
             return enemy_cards
         except Exception as e:
             print(f"Error detecting enemy cards: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
     def _is_enemy_position(self, x: float, y: float) -> bool:
