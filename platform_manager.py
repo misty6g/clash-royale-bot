@@ -11,10 +11,16 @@ class PlatformManager:
     """Cross-platform compatibility manager for macOS and Windows"""
     
     def __init__(self):
-        self.platform = platform.system().lower()
-        self.is_macos = self.platform == 'darwin'
-        self.is_windows = self.platform == 'windows'
-        self.is_linux = self.platform == 'linux'
+        system_platform = platform.system().lower()
+        # Map platform names to match configuration keys
+        if system_platform == 'darwin':
+            self.platform = 'macos'
+        else:
+            self.platform = system_platform
+
+        self.is_macos = system_platform == 'darwin'
+        self.is_windows = system_platform == 'windows'
+        self.is_linux = system_platform == 'linux'
         
         # Emulator configurations
         self.emulator_configs = {
@@ -29,7 +35,8 @@ class PlatformManager:
                     'process_names': ['BlueStacks', '/Applications/BlueStacks.app/Contents/MacOS/BlueStacks'],
                     'window_titles': ['BlueStacks', 'BlueStacks Air'],
                     'default_size': (538, 932),
-                    'game_area': (1218, 72, 1756, 1004)
+                    'game_area': (1268, 883, 1676, 1002),  # Updated to user's precise coordinates
+                    'hand_area': (1268, 883, 1676, 1002)   # Hand detection area
                 }
             },
             'android_studio': {
