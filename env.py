@@ -796,65 +796,89 @@ class ClashRoyaleEnv:
     def detect_enemy_cards(self) -> List[str]:
         """Detect enemy cards currently on the battlefield"""
         try:
-            # Use existing Roboflow model to detect enemy units
+            # Use Roboflow model to detect units on battlefield
             screenshot_path = self.screenshot_path
-            results = self.rf_model.run_workflow(
-                workspace_name="clash-royale-tgua7",
-                workflow_id="detect-count-and-visualize",
-                images={"image": screenshot_path}
-            )
+
+            # Try the battlefield detection workflow first
+            try:
+                results = self.rf_model.run_workflow(
+                    workspace_name="clash-royale-tgua7",
+                    workflow_id="detect-count-and-visualize",
+                    images={"image": screenshot_path}
+                )
+            except Exception as workflow_error:
+                print(f"🔍 Battlefield workflow failed, trying direct inference: {workflow_error}")
+                # Fallback to direct inference
+                results = self.rf_model.infer(screenshot_path)
 
             enemy_cards = []
             print(f"🔍 Enemy detection raw results type: {type(results)}")
 
-            # Handle the actual workflow response structure
+            # Handle different result structures
+            predictions = []
+
+            # Handle workflow response structure
             if isinstance(results, list) and len(results) > 0:
-                # Get the first result (main detection result)
                 main_result = results[0]
                 if isinstance(main_result, dict):
-                    # Check if any objects were detected
                     count_objects = main_result.get('count_objects', 0)
                     print(f"🔍 Objects detected by workflow: {count_objects}")
 
                     if count_objects == 0:
-                        print("👁️ No enemy units detected on battlefield (count_objects = 0)")
+                        print("👁️ No units detected on battlefield (count_objects = 0)")
                         return []
 
-                    # If objects were detected, look for predictions
-                    # The actual predictions might be in different keys
-                    predictions = []
+                    # Look for predictions in different keys
                     for key in ['predictions', 'detections', 'objects', 'results']:
                         if key in main_result:
                             predictions = main_result[key]
                             print(f"🔍 Found {len(predictions)} predictions in '{key}' field")
                             break
 
-                    # Process predictions if found
-                    for i, prediction in enumerate(predictions):
-                        try:
-                            if isinstance(prediction, dict):
-                                confidence = prediction.get('confidence', 0)
-                                if confidence > 0.5:
-                                    # Try different field names for class
-                                    card_name = (prediction.get('class_name') or
-                                               prediction.get('class') or
-                                               prediction.get('label', ''))
+            # Handle direct inference response structure
+            elif hasattr(results, 'predictions'):
+                predictions = results.predictions
+                print(f"🔍 Direct inference found {len(predictions)} predictions")
 
-                                    if card_name:
-                                        # Get position coordinates
-                                        x = prediction.get('x', 0)
-                                        y = prediction.get('y', 0)
+            # Handle dict response
+            elif isinstance(results, dict) and 'predictions' in results:
+                predictions = results['predictions']
+                print(f"🔍 Dict response found {len(predictions)} predictions")
 
-                                        enemy_cards.append(card_name)
-                                        print(f"🎯 Detected enemy unit: {card_name} at ({x}, {y}) confidence: {confidence:.2f}")
+            # Process predictions and filter for enemy territory
+            for i, prediction in enumerate(predictions):
+                try:
+                    # Handle different prediction formats
+                    if hasattr(prediction, 'confidence'):
+                        # Roboflow prediction object
+                        confidence = prediction.confidence
+                        card_name = prediction.class_name
+                        x = prediction.x
+                        y = prediction.y
+                    elif isinstance(prediction, dict):
+                        # Dict prediction
+                        confidence = prediction.get('confidence', 0)
+                        card_name = (prediction.get('class_name') or
+                                   prediction.get('class') or
+                                   prediction.get('label', ''))
+                        x = prediction.get('x', 0)
+                        y = prediction.get('y', 0)
+                    else:
+                        print(f"🔍 Skipping unknown prediction format: {type(prediction)}")
+                        continue
 
-                        except Exception as pred_error:
-                            print(f"Error processing prediction {i}: {pred_error}")
-                            continue
-                else:
-                    print(f"🔍 Unexpected main result type: {type(main_result)}")
-            else:
-                print(f"🔍 Unexpected results structure: {results}")
+                    # Filter by confidence and position
+                    if confidence > 0.4:  # Lower threshold for battlefield detection
+                        # Check if unit is in enemy territory
+                        if self._is_enemy_position(x, y):
+                            enemy_cards.append(card_name)
+                            print(f"🎯 Detected ENEMY unit: {card_name} at ({x}, {y}) confidence: {confidence:.2f}")
+                        else:
+                            print(f"🔵 Detected ALLY unit: {card_name} at ({x}, {y}) confidence: {confidence:.2f}")
+
+                except Exception as pred_error:
+                    print(f"Error processing prediction {i}: {pred_error}")
+                    continue
 
             if not enemy_cards:
                 print("👁️ No enemy units detected on battlefield")
@@ -869,9 +893,30 @@ class ClashRoyaleEnv:
 
     def _is_enemy_position(self, x: float, y: float) -> bool:
         """Determine if detected card is in enemy territory"""
-        # Enemy territory is typically upper half of the screen
-        # Adjust based on your game area coordinates
-        return y < self.grid_height / 2
+        try:
+            # Get actual game area coordinates
+            if hasattr(self, 'platform_manager') and self.platform_manager.detected_emulator:
+                # Use emulator-specific coordinates
+                config = self.platform_manager.detected_emulator['config']
+                game_area = config.get('game_area', (0, 0, 1920, 1080))
+                game_left, game_top, game_right, game_bottom = game_area
+
+                # Calculate middle of the battlefield (bridge area)
+                bridge_y = game_top + (game_bottom - game_top) * 0.5
+
+                # Enemy territory is upper half (y < bridge_y)
+                return y < bridge_y
+            else:
+                # Fallback: Use default screen coordinates
+                # Assuming 1920x1080 screen, enemy territory is upper half
+                screen_height = 1080
+                bridge_y = screen_height * 0.5
+                return y < bridge_y
+
+        except Exception as e:
+            print(f"Error in _is_enemy_position: {e}")
+            # Safe fallback - assume upper half is enemy territory
+            return y < 540  # Default for 1080p screen
 
     def choose_optimal_action(self, state, my_hand: List[str] = None) -> int:
         """Enhanced action selection with fallback to existing behavior"""
