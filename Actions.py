@@ -88,11 +88,11 @@ class Actions:
             self.HEIGHT = self.BOTTOM_RIGHT_Y - self.TOP_LEFT_Y
 
             # Card bar coordinates for BlueStacks Air (bottom of game area)
-            # Adjusted based on debug image feedback - higher, right, taller
-            self.CARD_BAR_X = 1255  # Slightly left to capture first card better
-            self.CARD_BAR_Y = 860   # Move higher to capture actual card area
-            self.CARD_BAR_WIDTH = 470  # Slightly wider to ensure first card is captured
-            self.CARD_BAR_HEIGHT = 110  # Make taller to capture full cards
+            # Updated with exact coordinates from user feedback
+            self.CARD_BAR_X = 1315  # Exact top-left X coordinate
+            self.CARD_BAR_Y = 832   # Exact top-left Y coordinate
+            self.CARD_BAR_WIDTH = 309  # Exact width measurement
+            self.CARD_BAR_HEIGHT = 153  # Exact height measurement
 
         elif self.os_type == "Windows": # windows
             self.TOP_LEFT_X = 1376
@@ -144,23 +144,29 @@ class Actions:
             self.CARD_BAR_HEIGHT
         ))
 
+        # The captured area includes both cards and elixir bar
+        # Cards are in the bottom portion, elixir is in the top
+        # Adjust to focus on just the card area (bottom ~70% of the captured region)
+        card_area_top = int(self.CARD_BAR_HEIGHT * 0.3)  # Skip top 30% (elixir area)
+        card_area_height = self.CARD_BAR_HEIGHT - card_area_top  # Use bottom 70% for cards
+
         # Improved card cropping with padding and better spacing
         card_width = self.CARD_BAR_WIDTH / 4  # Use float division for precision
-        padding = 3  # Reduced padding to capture more of each card
+        padding = 5  # Small padding to avoid edge artifacts
         cards = []
 
-        # Split into 4 individual card images with better positioning
+        # Split into 4 individual card images focusing on card area only
         for i in range(4):
             # Calculate more precise card boundaries
             left = int(i * card_width) + padding
             right = int((i + 1) * card_width) - padding
-            top = padding
+            top = card_area_top + padding  # Start from card area, not elixir area
             bottom = self.CARD_BAR_HEIGHT - padding
 
             # Ensure we don't go out of bounds
             left = max(0, left)
             right = min(self.CARD_BAR_WIDTH, right)
-            top = max(0, top)
+            top = max(card_area_top, top)
             bottom = min(self.CARD_BAR_HEIGHT, bottom)
 
             card_img = screenshot.crop((left, top, right, bottom))
@@ -168,7 +174,7 @@ class Actions:
             card_img.save(save_path)
             cards.append(save_path)
 
-            print(f"🎴 Card {i+1}: cropped from ({left}, {top}) to ({right}, {bottom})")
+            print(f"🎴 Card {i+1}: cropped from ({left}, {top}) to ({right}, {bottom}) [card area only]")
 
         return cards
 
