@@ -88,11 +88,11 @@ class Actions:
             self.HEIGHT = self.BOTTOM_RIGHT_Y - self.TOP_LEFT_Y
 
             # Card bar coordinates for BlueStacks Air (bottom of game area)
-            # Updated with exact coordinates from user feedback
-            self.CARD_BAR_X = 1315  # Exact top-left X coordinate
-            self.CARD_BAR_Y = 832   # Exact top-left Y coordinate
-            self.CARD_BAR_WIDTH = 309  # Exact width measurement
-            self.CARD_BAR_HEIGHT = 153  # Exact height measurement
+            # Updated with precise card area coordinates from user measurement
+            self.CARD_BAR_X = 1268  # Top-left X of first card
+            self.CARD_BAR_Y = 883   # Top-left Y of first card
+            self.CARD_BAR_WIDTH = 408  # Width: 1676 - 1268 = 408
+            self.CARD_BAR_HEIGHT = 119  # Height: 1002 - 883 = 119
 
         elif self.os_type == "Windows": # windows
             self.TOP_LEFT_X = 1376
@@ -144,11 +144,10 @@ class Actions:
             self.CARD_BAR_HEIGHT
         ))
 
-        # The captured area includes both cards and elixir bar
-        # Cards are in the bottom portion, elixir is in the top
-        # Adjust to focus on just the card area (bottom ~70% of the captured region)
-        card_area_top = int(self.CARD_BAR_HEIGHT * 0.3)  # Skip top 30% (elixir area)
-        card_area_height = self.CARD_BAR_HEIGHT - card_area_top  # Use bottom 70% for cards
+        # The captured area is now precisely the card area only (no elixir bar)
+        # Use the full height since coordinates are specifically for cards
+        card_area_top = 0  # Use full area - no need to skip elixir
+        card_area_height = self.CARD_BAR_HEIGHT  # Use full height
 
         # Improved card cropping with padding and better spacing
         card_width = self.CARD_BAR_WIDTH / 4  # Use float division for precision

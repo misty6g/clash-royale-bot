@@ -654,9 +654,9 @@ class ClashRoyaleEnv:
             our_side_top = game_top + game_height // 2
             our_side_bottom = game_top + game_height
 
-            tank_cards = ["Giant", "Golem", "Lava Hound", "P.E.K.K.A", "Mega Knight"]
-            support_cards = ["Wizard", "Musketeer", "Archers", "Minions", "Electro Wizard"]
-            swarm_cards = ["Skeleton Army", "Goblins", "Minion Horde", "Barbarians"]
+            tank_cards = ["Giant", "Golem", "Lava Hound", "P.E.K.K.A", "Mega Knight", "giant", "golem", "lava hound", "p.e.k.k.a", "mega knight"]
+            support_cards = ["Wizard", "Musketeer", "Archers", "Minions", "Electro Wizard", "wizard", "musketeer", "archers", "minions", "electro wizard", "firecracker", "bomber"]
+            swarm_cards = ["Skeleton Army", "Goblins", "Minion Horde", "Barbarians", "skeleton army", "goblins", "minion horde", "barbarians", "spear goblins"]
 
             import random
 
@@ -806,6 +806,7 @@ class ClashRoyaleEnv:
 
             enemy_cards = []
             print(f"🔍 Enemy detection raw results type: {type(results)}")
+            print(f"🔍 Raw results content: {results}")
 
             # Handle different result structures
             predictions = []
@@ -817,6 +818,11 @@ class ClashRoyaleEnv:
                     output = results["output"]
                     if isinstance(output, dict) and "predictions" in output:
                         predictions = output["predictions"]
+                # Try other possible keys
+                elif "detections" in results:
+                    predictions = results["detections"]
+                elif "results" in results:
+                    predictions = results["results"]
             elif isinstance(results, list) and results:
                 # Handle list structure
                 first = results[0]
@@ -827,8 +833,14 @@ class ClashRoyaleEnv:
                         output = first["output"]
                         if isinstance(output, dict) and "predictions" in output:
                             predictions = output["predictions"]
+                    elif "detections" in first:
+                        predictions = first["detections"]
+                else:
+                    # If it's a list of strings/predictions directly
+                    predictions = results
 
             print(f"🔍 Found {len(predictions)} predictions")
+            print(f"🔍 Predictions content: {predictions}")
 
             for i, prediction in enumerate(predictions):
                 try:
