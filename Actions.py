@@ -88,10 +88,11 @@ class Actions:
             self.HEIGHT = self.BOTTOM_RIGHT_Y - self.TOP_LEFT_Y
 
             # Card bar coordinates for BlueStacks Air (bottom of game area)
-            self.CARD_BAR_X = 1250  # Slightly right of left edge
-            self.CARD_BAR_Y = 900   # Near bottom of BlueStacks window
-            self.CARD_BAR_WIDTH = 450  # Most of the width
-            self.CARD_BAR_HEIGHT = 80  # Standard height
+            # Adjusted based on debug image feedback - higher, right, taller
+            self.CARD_BAR_X = 1255  # Slightly left to capture first card better
+            self.CARD_BAR_Y = 860   # Move higher to capture actual card area
+            self.CARD_BAR_WIDTH = 470  # Slightly wider to ensure first card is captured
+            self.CARD_BAR_HEIGHT = 110  # Make taller to capture full cards
 
         elif self.os_type == "Windows": # windows
             self.TOP_LEFT_X = 1376
@@ -135,26 +136,40 @@ class Actions:
         screenshot.save(save_path)
 
     def capture_individual_cards(self):
-        """Capture and split card bar into individual card images"""
+        """Capture and split card bar into individual card images with improved precision"""
         screenshot = pyautogui.screenshot(region=(
-            self.CARD_BAR_X, 
-            self.CARD_BAR_Y, 
-            self.CARD_BAR_WIDTH, 
+            self.CARD_BAR_X,
+            self.CARD_BAR_Y,
+            self.CARD_BAR_WIDTH,
             self.CARD_BAR_HEIGHT
         ))
-        
-        # Calculate individual card widths
-        card_width = self.CARD_BAR_WIDTH // 4
+
+        # Improved card cropping with padding and better spacing
+        card_width = self.CARD_BAR_WIDTH / 4  # Use float division for precision
+        padding = 3  # Reduced padding to capture more of each card
         cards = []
-        
-        # Split into 4 individual card images
+
+        # Split into 4 individual card images with better positioning
         for i in range(4):
-            left = i * card_width
-            card_img = screenshot.crop((left, 0, left + card_width, self.CARD_BAR_HEIGHT))
+            # Calculate more precise card boundaries
+            left = int(i * card_width) + padding
+            right = int((i + 1) * card_width) - padding
+            top = padding
+            bottom = self.CARD_BAR_HEIGHT - padding
+
+            # Ensure we don't go out of bounds
+            left = max(0, left)
+            right = min(self.CARD_BAR_WIDTH, right)
+            top = max(0, top)
+            bottom = min(self.CARD_BAR_HEIGHT, bottom)
+
+            card_img = screenshot.crop((left, top, right, bottom))
             save_path = os.path.join(self.script_dir, 'screenshots', f"card_{i+1}.png")
             card_img.save(save_path)
             cards.append(save_path)
-        
+
+            print(f"🎴 Card {i+1}: cropped from ({left}, {top}) to ({right}, {bottom})")
+
         return cards
 
     def count_elixir(self):
