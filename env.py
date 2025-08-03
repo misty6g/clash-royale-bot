@@ -806,82 +806,61 @@ class ClashRoyaleEnv:
 
             enemy_cards = []
             print(f"🔍 Enemy detection raw results type: {type(results)}")
-            print(f"🔍 Raw results content: {results}")
 
-            # Handle different result structures
-            predictions = []
-            if isinstance(results, dict):
-                if "predictions" in results:
-                    predictions = results["predictions"]
-                elif "output" in results:
-                    # Handle workflow output structure
-                    output = results["output"]
-                    if isinstance(output, dict) and "predictions" in output:
-                        predictions = output["predictions"]
-                # Try other possible keys
-                elif "detections" in results:
-                    predictions = results["detections"]
-                elif "results" in results:
-                    predictions = results["results"]
-            elif isinstance(results, list) and results:
-                # Handle list structure
-                first = results[0]
-                if isinstance(first, dict):
-                    if "predictions" in first:
-                        predictions = first["predictions"]
-                    elif "output" in first:
-                        output = first["output"]
-                        if isinstance(output, dict) and "predictions" in output:
-                            predictions = output["predictions"]
-                    elif "detections" in first:
-                        predictions = first["detections"]
-                else:
-                    # If it's a list of strings/predictions directly
-                    predictions = results
+            # Handle the actual workflow response structure
+            if isinstance(results, list) and len(results) > 0:
+                # Get the first result (main detection result)
+                main_result = results[0]
+                if isinstance(main_result, dict):
+                    # Check if any objects were detected
+                    count_objects = main_result.get('count_objects', 0)
+                    print(f"🔍 Objects detected by workflow: {count_objects}")
 
-            print(f"🔍 Found {len(predictions)} predictions")
-            print(f"🔍 Predictions content: {predictions}")
+                    if count_objects == 0:
+                        print("👁️ No enemy units detected on battlefield (count_objects = 0)")
+                        return []
 
-            for i, prediction in enumerate(predictions):
-                try:
-                    print(f"🔍 Processing prediction {i}: {type(prediction)} - {prediction}")
+                    # If objects were detected, look for predictions
+                    # The actual predictions might be in different keys
+                    predictions = []
+                    for key in ['predictions', 'detections', 'objects', 'results']:
+                        if key in main_result:
+                            predictions = main_result[key]
+                            print(f"🔍 Found {len(predictions)} predictions in '{key}' field")
+                            break
 
-                    # Skip metadata strings like "image", "predictions", etc.
-                    if isinstance(prediction, str):
-                        # Only accept strings that look like actual card names
-                        if prediction.lower() in ['image', 'predictions', 'output', 'results']:
-                            print(f"🚫 Skipping metadata string: {prediction}")
+                    # Process predictions if found
+                    for i, prediction in enumerate(predictions):
+                        try:
+                            if isinstance(prediction, dict):
+                                confidence = prediction.get('confidence', 0)
+                                if confidence > 0.5:
+                                    # Try different field names for class
+                                    card_name = (prediction.get('class_name') or
+                                               prediction.get('class') or
+                                               prediction.get('label', ''))
+
+                                    if card_name:
+                                        # Get position coordinates
+                                        x = prediction.get('x', 0)
+                                        y = prediction.get('y', 0)
+
+                                        enemy_cards.append(card_name)
+                                        print(f"🎯 Detected enemy unit: {card_name} at ({x}, {y}) confidence: {confidence:.2f}")
+
+                        except Exception as pred_error:
+                            print(f"Error processing prediction {i}: {pred_error}")
                             continue
+                else:
+                    print(f"🔍 Unexpected main result type: {type(main_result)}")
+            else:
+                print(f"🔍 Unexpected results structure: {results}")
 
-                        # Accept actual card names
-                        card_name = prediction
-                        enemy_cards.append(card_name)
-                        print(f"🎯 Detected unit (string): {card_name}")
-                        continue
-
-                    # Handle dict predictions with confidence and coordinates
-                    if isinstance(prediction, dict):
-                        confidence = prediction.get('confidence', 0)
-                        if confidence > 0.5:  # Lower threshold for testing
-                            # Try different field names for class
-                            card_name = (prediction.get('class_name') or
-                                       prediction.get('class') or
-                                       prediction.get('label', ''))
-
-                            if card_name and card_name.lower() not in ['image', 'predictions', 'output', 'results']:
-                                # Get position coordinates
-                                x = prediction.get('x', 0)
-                                y = prediction.get('y', 0)
-
-                                # For now, add all detected units (we'll refine position logic later)
-                                enemy_cards.append(card_name)
-                                print(f"🎯 Detected unit (dict): {card_name} at ({x}, {y}) confidence: {confidence:.2f}")
-
-                except Exception as pred_error:
-                    print(f"Error processing prediction {i}: {pred_error}")
-                    continue
+            if not enemy_cards:
+                print("👁️ No enemy units detected on battlefield")
 
             return enemy_cards
+
         except Exception as e:
             print(f"Error detecting enemy cards: {e}")
             import traceback
