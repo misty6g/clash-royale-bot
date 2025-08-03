@@ -796,7 +796,25 @@ class ClashRoyaleEnv:
     def detect_enemy_cards(self) -> List[str]:
         """Detect enemy cards currently on the battlefield"""
         try:
-            # Use Roboflow model to detect units on battlefield
+            # Use enhanced vision system if available
+            if hasattr(self, 'enhanced_vision') and self.enhanced_vision:
+                print("🔍 Using enhanced vision system for battlefield detection")
+                units = self.enhanced_vision.detect_units_on_field()
+                enemy_cards = []
+
+                for unit in units:
+                    # Filter for enemy units based on position
+                    x = unit.get('x', 0)
+                    y = unit.get('y', 0)
+                    if self._is_enemy_position(x, y):
+                        enemy_cards.append(unit.get('class', 'Unknown'))
+                        print(f"🎯 Enhanced vision detected ENEMY: {unit.get('class')} at ({x}, {y})")
+
+                if enemy_cards:
+                    return enemy_cards
+                print("👁️ Enhanced vision: No enemy units detected")
+
+            # Fallback to Roboflow workflow
             screenshot_path = self.screenshot_path
 
             # Try the battlefield detection workflow first
@@ -868,7 +886,7 @@ class ClashRoyaleEnv:
                         continue
 
                     # Filter by confidence and position
-                    if confidence > 0.4:  # Lower threshold for battlefield detection
+                    if confidence > 0.3:  # Even lower threshold for battlefield detection
                         # Check if unit is in enemy territory
                         if self._is_enemy_position(x, y):
                             enemy_cards.append(card_name)
