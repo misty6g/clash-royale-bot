@@ -849,8 +849,19 @@ class ClashRoyaleEnv:
                     # Look for predictions in different keys
                     for key in ['predictions', 'detections', 'objects', 'results']:
                         if key in main_result:
-                            predictions = main_result[key]
-                            print(f"🔍 Found {len(predictions)} predictions in '{key}' field")
+                            predictions_data = main_result[key]
+                            print(f"🔍 Found predictions data in '{key}' field: {type(predictions_data)}")
+
+                            # Handle nested predictions structure
+                            if isinstance(predictions_data, dict) and 'predictions' in predictions_data:
+                                predictions = predictions_data['predictions']
+                                print(f"🔍 Extracted {len(predictions)} predictions from nested structure")
+                            elif isinstance(predictions_data, list):
+                                predictions = predictions_data
+                                print(f"🔍 Using {len(predictions)} predictions directly from list")
+                            else:
+                                print(f"🔍 Unknown predictions data format: {type(predictions_data)}")
+                                predictions = []
                             break
 
             # Handle direct inference response structure
@@ -864,8 +875,16 @@ class ClashRoyaleEnv:
                 print(f"🔍 Dict response found {len(predictions)} predictions")
 
             # Process predictions and filter for enemy territory
+            print(f"🔍 Processing {len(predictions)} predictions...")
             for i, prediction in enumerate(predictions):
                 try:
+                    print(f"🔍 Prediction {i}: type={type(prediction)}, content={prediction}")
+
+                    # Skip non-dict predictions (like strings)
+                    if not isinstance(prediction, dict):
+                        print(f"🔍 Skipping non-dict prediction: {type(prediction)}")
+                        continue
+
                     # Handle different prediction formats
                     if hasattr(prediction, 'confidence'):
                         # Roboflow prediction object
@@ -885,17 +904,31 @@ class ClashRoyaleEnv:
                         print(f"🔍 Skipping unknown prediction format: {type(prediction)}")
                         continue
 
+                    print(f"🔍 Parsed prediction: {card_name} at ({x}, {y}) confidence: {confidence:.2f}")
+
+                    # Skip towers - we only want actual units/troops
+                    if 'tower' in card_name.lower():
+                        print(f"🏰 Skipping tower: {card_name}")
+                        continue
+
                     # Filter by confidence and position
                     if confidence > 0.3:  # Even lower threshold for battlefield detection
                         # Check if unit is in enemy territory
-                        if self._is_enemy_position(x, y):
+                        is_enemy_pos = self._is_enemy_position(x, y)
+                        print(f"🔍 Position check: ({x}, {y}) -> {'ENEMY' if is_enemy_pos else 'ALLY'} territory")
+
+                        if is_enemy_pos:
                             enemy_cards.append(card_name)
                             print(f"🎯 Detected ENEMY unit: {card_name} at ({x}, {y}) confidence: {confidence:.2f}")
                         else:
                             print(f"🔵 Detected ALLY unit: {card_name} at ({x}, {y}) confidence: {confidence:.2f}")
+                    else:
+                        print(f"🔍 Low confidence, skipping: {card_name} ({confidence:.2f})")
 
                 except Exception as pred_error:
                     print(f"Error processing prediction {i}: {pred_error}")
+                    import traceback
+                    traceback.print_exc()
                     continue
 
             if not enemy_cards:
@@ -912,29 +945,27 @@ class ClashRoyaleEnv:
     def _is_enemy_position(self, x: float, y: float) -> bool:
         """Determine if detected card is in enemy territory"""
         try:
-            # Get actual game area coordinates
-            if hasattr(self, 'platform_manager') and self.platform_manager.detected_emulator:
-                # Use emulator-specific coordinates
-                config = self.platform_manager.detected_emulator['config']
-                game_area = config.get('game_area', (0, 0, 1920, 1080))
-                game_left, game_top, game_right, game_bottom = game_area
+            print(f"🔍 Position analysis: x={x}, y={y}")
 
-                # Calculate middle of the battlefield (bridge area)
-                bridge_y = game_top + (game_bottom - game_top) * 0.5
+            # Based on the debug output, it looks like:
+            # - Enemy princess towers are at y=184 (top area)
+            # - Ally king tower is at y=671 (bottom area)
+            # - Enemy king tower is at y=117.5 (very top)
+            # - Ally princess tower is at y=595.5 (bottom area)
 
-                # Enemy territory is upper half (y < bridge_y)
-                return y < bridge_y
-            else:
-                # Fallback: Use default screen coordinates
-                # Assuming 1920x1080 screen, enemy territory is upper half
-                screen_height = 1080
-                bridge_y = screen_height * 0.5
-                return y < bridge_y
+            # So enemy territory appears to be y < 400 (roughly upper third)
+            # and ally territory is y > 400 (roughly lower two-thirds)
+
+            bridge_y = 400  # Approximate bridge/middle area
+            is_enemy = y < bridge_y
+
+            print(f"🔍 Bridge at y={bridge_y}, position y={y} -> {'ENEMY' if is_enemy else 'ALLY'}")
+            return is_enemy
 
         except Exception as e:
             print(f"Error in _is_enemy_position: {e}")
-            # Safe fallback - assume upper half is enemy territory
-            return y < 540  # Default for 1080p screen
+            # Safe fallback - assume upper third is enemy territory
+            return y < 400
 
     def choose_optimal_action(self, state, my_hand: List[str] = None) -> int:
         """Enhanced action selection with fallback to existing behavior"""
